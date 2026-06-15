@@ -1,0 +1,53 @@
+import { useAccount, useConnect, useDisconnect } from "wagmi"
+import { injected } from "wagmi/connectors"
+import { EXPLORER_URL } from "../config"
+import { useSmartAccountAddress } from "../hooks/useSmartAccountAddress"
+import { Badge } from "./ui/badge"
+import { Button } from "./ui/button"
+
+const shortAddr = (addr: string) => `${addr.slice(0, 6)}…${addr.slice(-4)}`
+
+export function Header() {
+  const { address, isConnected } = useAccount()
+  const { connect } = useConnect()
+  const { disconnect } = useDisconnect()
+  const { smartAddress } = useSmartAccountAddress()
+
+  return (
+    <header className="border-b bg-background/95 backdrop-blur sticky top-0 z-10">
+      <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <h1 className="text-xl font-bold tracking-tight">USD8 Gasless Transfer</h1>
+          <Badge variant="secondary" className="text-xs">ERC-4337</Badge>
+        </div>
+
+        <div className="flex items-center gap-3">
+          {isConnected && address ? (
+            <>
+              <div className="flex flex-col items-end gap-1">
+                <span className="text-xs text-muted-foreground">
+                  EOA:{" "}
+                  <a href={`${EXPLORER_URL}/address/${address}`} target="_blank" rel="noreferrer" className="font-mono hover:underline">
+                    {shortAddr(address)}
+                  </a>
+                </span>
+                {smartAddress && (
+                  <span className="text-xs text-muted-foreground">
+                    Smart Account:{" "}
+                    <a href={`${EXPLORER_URL}/address/${smartAddress}`} target="_blank" rel="noreferrer" className="font-mono hover:underline">
+                      {shortAddr(smartAddress)}
+                    </a>
+                  </span>
+                )}
+              </div>
+              <Badge variant="outline" className="text-green-600 border-green-600">Connected</Badge>
+              <Button variant="outline" size="sm" onClick={() => disconnect()}>Disconnect</Button>
+            </>
+          ) : (
+            <Button size="sm" onClick={() => connect({ connector: injected() })}>Connect Wallet</Button>
+          )}
+        </div>
+      </div>
+    </header>
+  )
+}
