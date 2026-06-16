@@ -12,7 +12,7 @@ import {
 } from "../config"
 import { useSmartAccountAddress } from "./useSmartAccountAddress"
 
-export function useAccountBalances() {
+export function useAccountBalances(recipientAddress?: string) {
   const { smartAddress, isLoading: addressLoading } = useSmartAccountAddress()
   const enabled = !!smartAddress
 
@@ -29,11 +29,12 @@ export function useAccountBalances() {
     query: { enabled, refetchInterval: 4000 },
   })
 
+  const recipient = (recipientAddress as `0x${string}` | undefined) ?? USER_B_ADDRESS
   const { data: usd8BalanceB } = useReadContract({
     address: USD8_ADDRESS,
     abi: USD8_ABI,
     functionName: "balanceOf",
-    args: [USER_B_ADDRESS],
+    args: [recipient],
     query: { refetchInterval: 4000 },
   })
 
@@ -71,6 +72,7 @@ export function useAccountBalances() {
     polBalance: polBalance ? formatUnits(polBalance.value, 18) : null,
     usd8BalanceA: usd8BalanceA ? formatUnits(usd8BalanceA as bigint, USD8_DECIMALS) : null,
     usd8BalanceB: usd8BalanceB ? formatUnits(usd8BalanceB as bigint, USD8_DECIMALS) : null,
+    recipientAddress: recipient,
     allowance: allowance as bigint | undefined,
     isApproved,
     oraclePrice,

@@ -1,6 +1,5 @@
 import { AlertCircle, Loader2 } from "lucide-react"
 import { useState } from "react"
-import { USER_B_ADDRESS } from "../config"
 import { useAccountBalances } from "../hooks/useAccountBalances"
 import { useApprove } from "../hooks/useApprove"
 import { useSmartAccountAddress } from "../hooks/useSmartAccountAddress"
@@ -12,19 +11,23 @@ import { Input } from "./ui/input"
 import { Label } from "./ui/label"
 
 interface Props {
+  recipient: string
+  onRecipientChange: (value: string) => void
   onSuccess: (result: TransferResult) => void
 }
 
-export function TransferForm({ onSuccess }: Props) {
-  const [recipient, setRecipient] = useState<string>(USER_B_ADDRESS)
+export function TransferForm({ recipient, onRecipientChange, onSuccess }: Props) {
   const [amount, setAmount] = useState("10")
 
   const { smartAddress } = useSmartAccountAddress()
-  const { isApproved, refetchAllowance } = useAccountBalances()
+  const { isApproved, usd8BalanceA, refetchAllowance } = useAccountBalances(recipient)
   const { approve, isPending: isApproving, error: approveError } = useApprove()
   const { send, isPending: isSending, error: sendError } = useTransfer()
 
   const needsApproval = !isApproved
+  const amountNum = parseFloat(amount) || 0
+  const balanceNum = parseFloat(usd8BalanceA ?? "0")
+  const insufficientBalance = amountNum > 0 && amountNum > balanceNum
 
   async function handleApprove() {
     await approve()
@@ -73,13 +76,20 @@ export function TransferForm({ onSuccess }: Props) {
             id="recipient"
             placeholder="0x…"
             value={recipient}
-            onChange={(e) => setRecipient(e.target.value)}
+            onChange={(e) => onRecipientChange(e.target.value)}
             className="font-mono text-sm"
           />
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="amount">Amount (USD8)</Label>
+          <div className="flex items-center justify-between">
+            <Label htmlFor="amount">Amount (USD8)</Label>
+            {usd8BalanceA !== null && (
+              <span className="text-xs text-muted-foreground">
+                Balance: {Number(usd8BalanceA).toLocaleString("en-US", { maximumFractionDigits: 4 })} USD8
+              </span>
+            )}
+          </div>
           <Input
             id="amount"
             type="number"
@@ -88,7 +98,13 @@ export function TransferForm({ onSuccess }: Props) {
             placeholder="10"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
+            className={insufficientBalance ? "border-destructive focus-visible:ring-destructive" : ""}
           />
+          {insufficientBalance && (
+            <p className="text-xs text-destructive">
+              Insufficient balance. You have {Number(usd8BalanceA).toLocaleString("en-US", { maximumFractionDigits: 4 })} USD8.
+            </p>
+          )}
         </div>
 
         {sendError && (
@@ -102,7 +118,7 @@ export function TransferForm({ onSuccess }: Props) {
         <Button
           className="w-full"
           onClick={handleSend}
-          disabled={isSending || needsApproval || !recipient || !amount}
+          disabled={isSending || needsApproval || !recipient || !amount || insufficientBalance}
         >
           {isSending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           {isSending ? "Sending UserOp…" : "Send Transfer"}

@@ -1,16 +1,14 @@
 import { useAccount, useConnect, useDisconnect } from "wagmi"
 import { injected } from "wagmi/connectors"
-import { EXPLORER_URL } from "../config"
 import { useSmartAccountAddress } from "../hooks/useSmartAccountAddress"
+import { AddressDisplay } from "./AddressDisplay"
 import { Badge } from "./ui/badge"
 import { Button } from "./ui/button"
-
-const shortAddr = (addr: string) => `${addr.slice(0, 6)}…${addr.slice(-4)}`
 
 export function Header() {
   const { address, isConnected } = useAccount()
   const { connect } = useConnect()
-  const { disconnect } = useDisconnect()
+  const { mutate: disconnect } = useDisconnect()
   const { smartAddress } = useSmartAccountAddress()
 
   return (
@@ -26,17 +24,11 @@ export function Header() {
             <>
               <div className="flex flex-col items-end gap-1">
                 <span className="text-xs text-muted-foreground">
-                  EOA:{" "}
-                  <a href={`${EXPLORER_URL}/address/${address}`} target="_blank" rel="noreferrer" className="font-mono hover:underline">
-                    {shortAddr(address)}
-                  </a>
+                  EOA: <AddressDisplay address={address} className="text-xs" />
                 </span>
                 {smartAddress && (
                   <span className="text-xs text-muted-foreground">
-                    Smart Account:{" "}
-                    <a href={`${EXPLORER_URL}/address/${smartAddress}`} target="_blank" rel="noreferrer" className="font-mono hover:underline">
-                      {shortAddr(smartAddress)}
-                    </a>
+                    Smart Account: <AddressDisplay address={smartAddress} className="text-xs" />
                   </span>
                 )}
               </div>

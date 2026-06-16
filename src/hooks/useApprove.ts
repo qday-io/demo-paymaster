@@ -1,11 +1,14 @@
 import { createSmartAccountClient } from "permissionless"
-import { createPimlicoClient } from "permissionless/clients/pimlico"
 import { useState } from "react"
-import { encodeFunctionData, http, maxUint256, type Address } from "viem"
-import { entryPoint07Address } from "viem/account-abstraction"
+import { createPublicClient, encodeFunctionData, http, maxUint256, type Address } from "viem"
 import { polygonAmoy } from "viem/chains"
-import { BUNDLER_URL, USD8_ADDRESS, USD8_PAYMASTER_ADDRESS } from "../config"
+import { AMOY_RPC_URL, BUNDLER_URL, USD8_ADDRESS, USD8_PAYMASTER_ADDRESS } from "../config"
 import { useSmartAccount } from "./useSmartAccount"
+
+const publicClient = createPublicClient({
+  chain: polygonAmoy,
+  transport: http(AMOY_RPC_URL),
+})
 
 const APPROVE_ABI = [
   {
@@ -27,27 +30,30 @@ export function useApprove() {
   const [error, setError] = useState<Error | null>(null)
 
   async function approve() {
-    if (!smartAccount) throw new Error("Wallet not connected")
     setIsPending(true)
     setError(null)
     setIsSuccess(false)
 
     try {
-      const bundlerClient = createPimlicoClient({
-        transport: http(BUNDLER_URL),
-        entryPoint: { address: entryPoint07Address, version: "0.7" },
-      })
+      if (!smartAccount) throw new Error("Smart account not ready yet — please wait a moment")
 
       const client = createSmartAccountClient({
         account: smartAccount,
         chain: polygonAmoy,
         bundlerTransport: http(BUNDLER_URL),
         userOperation: {
-          estimateFeesPerGas: async () =>
-            (await bundlerClient.getUserOperationGasPrice()).fast,
+          estimateFeesPerGas: async () => {
+            const fees = await publicClient.estimateFeesPerGas()
+            return {
+              maxFeePerGas: fees.maxFeePerGas ?? 0n,
+              maxPriorityFeePerGas: fees.maxPriorityFeePerGas ?? 0n,
+            }
+          },
         },
       })
 
+      // verificationGasLimit must cover factory deployment on the first UserOp.
+      // 150k covers verification only; factory deploy needs ~300k extra.
       const hash = await client.sendUserOperation({
         calls: [
           {
@@ -60,9 +66,9 @@ export function useApprove() {
             value: 0n,
           },
         ],
-        verificationGasLimit: 150_000n,
+        verificationGasLimit: 500_000n,
         callGasLimit: 100_000n,
-        preVerificationGas: 60_000n,
+        preVerificationGas: 80_000n,
       })
 
       await client.waitForUserOperationReceipt({ hash })
@@ -74,5 +80,5 @@ export function useApprove() {
     }
   }
 
-  return { approve, isPending, isSuccess, error }
+  return { approve, isPending, isSuccess, error, isReady: !!smartAccount }
 }

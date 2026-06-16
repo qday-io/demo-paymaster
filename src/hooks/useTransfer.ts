@@ -1,16 +1,16 @@
 import { createSmartAccountClient } from "permissionless"
-import { createPimlicoClient } from "permissionless/clients/pimlico"
 import { useState } from "react"
 import {
+  createPublicClient,
   encodeFunctionData,
   http,
   parseEventLogs,
   parseUnits,
   type Address,
 } from "viem"
-import { entryPoint07Address } from "viem/account-abstraction"
 import { polygonAmoy } from "viem/chains"
 import {
+  AMOY_RPC_URL,
   BUNDLER_URL,
   EXPLORER_URL,
   USD8_ADDRESS,
@@ -18,6 +18,11 @@ import {
   USD8_PAYMASTER_ADDRESS,
 } from "../config"
 import { useSmartAccount } from "./useSmartAccount"
+
+const publicClient = createPublicClient({
+  chain: polygonAmoy,
+  transport: http(AMOY_RPC_URL),
+})
 
 const ERC20_ABI = [
   {
@@ -47,8 +52,8 @@ const PAYMASTER_ABI = [
     type: "event",
     inputs: [
       { name: "sender", type: "address", indexed: true },
-      { name: "charged", type: "uint256", indexed: false },
       { name: "refunded", type: "uint256", indexed: false },
+      { name: "charged", type: "uint256", indexed: false },
       { name: "actualGasCost", type: "uint256", indexed: false },
     ],
   },
@@ -71,18 +76,14 @@ export function useTransfer() {
   const [error, setError] = useState<Error | null>(null)
 
   async function send(to: Address, amountUsd8: string): Promise<TransferResult | null> {
-    if (!smartAccount) throw new Error("Wallet not connected")
     setIsPending(true)
     setResult(null)
     setError(null)
 
     try {
-      const amount = parseUnits(amountUsd8, USD8_DECIMALS)
+      if (!smartAccount) throw new Error("Smart account not ready yet — please wait a moment")
 
-      const bundlerClient = createPimlicoClient({
-        transport: http(BUNDLER_URL),
-        entryPoint: { address: entryPoint07Address, version: "0.7" },
-      })
+      const amount = parseUnits(amountUsd8, USD8_DECIMALS)
 
       const client = createSmartAccountClient({
         account: smartAccount,
@@ -105,8 +106,13 @@ export function useTransfer() {
           },
         },
         userOperation: {
-          estimateFeesPerGas: async () =>
-            (await bundlerClient.getUserOperationGasPrice()).fast,
+          estimateFeesPerGas: async () => {
+            const fees = await publicClient.estimateFeesPerGas()
+            return {
+              maxFeePerGas: fees.maxFeePerGas ?? 0n,
+              maxPriorityFeePerGas: fees.maxPriorityFeePerGas ?? 0n,
+            }
+          },
         },
       })
 
