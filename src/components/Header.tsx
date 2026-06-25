@@ -5,7 +5,11 @@ import { AddressDisplay } from "./AddressDisplay"
 import { Badge } from "./ui/badge"
 import { Button } from "./ui/button"
 
-export function Header() {
+interface HeaderProps {
+  showConnect?: boolean
+}
+
+export function Header({ showConnect = true }: HeaderProps) {
   const { address, isConnected } = useAccount()
   const { connect } = useConnect()
   const { mutate: disconnect } = useDisconnect()
@@ -15,7 +19,7 @@ export function Header() {
     <header className="border-b bg-background/95 backdrop-blur sticky top-0 z-10">
       <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <h1 className="text-xl font-bold tracking-tight">USD8 Gasless Transfer</h1>
+          <a href="/" className="text-xl font-bold tracking-tight hover:opacity-80">USD8 Gasless Transfer</a>
           <Badge variant="secondary" className="text-xs">ERC-4337</Badge>
         </div>
 
@@ -35,9 +39,9 @@ export function Header() {
               <Badge variant="outline" className="text-green-600 border-green-600">Connected</Badge>
               <Button variant="outline" size="sm" onClick={() => disconnect()}>Disconnect</Button>
             </>
-          ) : (
+          ) : showConnect ? (
             <Button size="sm" onClick={() => connect({ connector: injected() })}>Connect Wallet</Button>
-          )}
+          ) : null}
         </div>
       </div>
     </header>

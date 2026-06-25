@@ -64,6 +64,7 @@ export function AccountInfo({ recipientAddress }: Props) {
     usd8BalanceA,
     usd8BalanceB,
     isApproved,
+    isDeployed,
     oraclePrice,
     paymasterDeposit,
     recipientAddress: resolvedRecipient,
@@ -133,13 +134,24 @@ export function AccountInfo({ recipientAddress }: Props) {
         </div>
 
         {/* ── Status bar ─────────────────────────────────────── */}
-        <div className="grid grid-cols-3 divide-x rounded-lg border text-sm">
+        <div className="grid grid-cols-4 divide-x rounded-lg border text-sm">
           <div className="flex flex-col items-center py-2.5 px-2 gap-1">
             {isApproved
               ? <CheckCircle2 className="h-4 w-4 text-green-600" />
               : <XCircle className="h-4 w-4 text-destructive" />}
             <span className="text-xs text-muted-foreground leading-tight text-center">
               {isApproved ? "Paymaster approved" : "Needs approval"}
+            </span>
+          </div>
+
+          <div className="flex flex-col items-center py-2.5 px-2 gap-1">
+            {isDeployed ? (
+              <CheckCircle2 className="h-4 w-4 text-green-600" />
+            ) : (
+              <XCircle className="h-4 w-4 text-amber-600" />
+            )}
+            <span className="text-xs text-muted-foreground leading-tight text-center">
+              {isDeployed ? "Smart account deployed" : "Not deployed yet"}
             </span>
           </div>
 

@@ -1,6 +1,5 @@
-import { useAccount, useConnect, useDisconnect, useSendTransaction } from "wagmi"
+import { useAccount, useConnect, useDisconnect } from "wagmi"
 import { injected } from "wagmi/connectors"
-import { parseEther } from "viem"
 import {
   CheckCircle2,
   Loader2,
@@ -19,14 +18,16 @@ import {
   CardTitle,
 } from "../components/ui/card"
 import { AddressBox } from "../components/AddressDisplay"
+import { SendPolModal } from "../components/SendPolModal"
 import { useAccountBalances } from "../hooks/useAccountBalances"
 import { useApprove } from "../hooks/useApprove"
 import { cn, formatUserOpError } from "../lib/utils"
+import { useState } from "react"
 
-// Amount of POL needed to bootstrap (deploy + approve) the smart account.
-// Gas limits: 350k + 120k + 60k = 530k total.
-// At 100 gwei peak: 530k × 100 gwei = 0.053 POL prefund.
-// 0.1 POL covers spikes up to ~188 gwei; unused POL is refunded by EntryPoint.
+// Amount of POL needed to bootstrap (first-time factory deploy + approve) the smart account.
+// This is only required when the smart account has not been deployed yet.
+// Gas limits (first UserOp): ~350k verification (incl. deploy) + 120k + 60k = ~530k total.
+// After deployment, all future UserOps are fully sponsored by the USD8 paymaster (0 POL).
 const POL_BOOTSTRAP = 0.1
 
 type Step = "connect" | "loading" | "fund" | "approve" | "done"
@@ -37,10 +38,12 @@ function deriveStep(
   smartAddress: string | undefined,
   polBalance: string | null,
   isApproved: boolean,
+  isDeployed: boolean,
 ): Step {
   if (!isConnected) return "connect"
   if (isLoading || !smartAddress) return "loading"
   if (isApproved) return "done"
+  if (isDeployed) return "approve" // already on-chain, only the paymaster approval is missing
   if (polBalance === null || parseFloat(polBalance) < POL_BOOTSTRAP) return "fund"
   return "approve"
 }
@@ -126,15 +129,16 @@ function StepLoading() {
 }
 
 function StepFund({ smartAddress, polBalance }: { smartAddress: string; polBalance: string | null }) {
-  const { sendTransaction, isPending: isSending, isSuccess: sentPol } = useSendTransaction()
+  const [showModal, setShowModal] = useState(false)
+  const [justSent, setJustSent] = useState(false)
+
   const pol = polBalance !== null ? parseFloat(polBalance) : 0
   const hasEnough = pol >= POL_BOOTSTRAP
 
-  function fundFromEoa() {
-    sendTransaction({
-      to: smartAddress as `0x${string}`,
-      value: parseEther(String(POL_BOOTSTRAP)),
-    })
+  const handleModalSuccess = () => {
+    setJustSent(true)
+    // Clear the success banner after a while; balance will refresh via query
+    setTimeout(() => setJustSent(false), 6000)
   }
 
   return (
@@ -165,7 +169,7 @@ function StepFund({ smartAddress, polBalance }: { smartAddress: string; polBalan
         </span>
       </div>
 
-      {sentPol && (
+      {(justSent) && (
         <Alert>
           <CheckCircle2 className="h-4 w-4 text-green-600" />
           <AlertTitle>Transfer sent!</AlertTitle>
@@ -178,26 +182,36 @@ function StepFund({ smartAddress, polBalance }: { smartAddress: string; polBalan
       <div className="space-y-2">
         <Button
           className="w-full"
-          onClick={fundFromEoa}
-          disabled={isSending || sentPol}
+          onClick={() => setShowModal(true)}
         >
-          {isSending ? (
-            <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Sending from your wallet…</>
-          ) : sentPol ? (
-            <><CheckCircle2 className="mr-2 h-4 w-4" />Transfer submitted</>
-          ) : (
-            `Send ${POL_BOOTSTRAP} POL from my wallet`
-          )}
+          Send POL to Smart Account
         </Button>
+
         <p className="text-center text-xs text-muted-foreground">
+          Opens a modal to send any amount directly from your wallet (recommended).<br />
           Or manually send POL to the address above, then refresh.
         </p>
       </div>
+
+      <SendPolModal
+        open={showModal}
+        onOpenChange={setShowModal}
+        smartAddress={smartAddress}
+        onSuccess={handleModalSuccess}
+      />
     </div>
   )
 }
 
-function StepApprove({ smartAddress, polBalance }: { smartAddress: string; polBalance: string | null }) {
+function StepApprove({
+  smartAddress,
+  polBalance,
+  isDeployed = false,
+}: {
+  smartAddress: string
+  polBalance: string | null
+  isDeployed?: boolean
+}) {
   const { approve, isPending, isSuccess, error } = useApprove()
 
   return (
@@ -208,8 +222,19 @@ function StepApprove({ smartAddress, polBalance }: { smartAddress: string; polBa
       <div className="space-y-2 text-center">
         <CardTitle className="text-xl">Activate Gasless Mode</CardTitle>
         <CardDescription className="leading-relaxed">
-          Approve the USD8 Paymaster once. Every future transaction will be paid
-          automatically in USD8 — you'll never need POL again.
+          {isDeployed ? (
+            <>
+              Your smart account is <strong>already deployed</strong> on-chain. Approve the USD8
+              Paymaster once and all future transactions will be paid automatically in USD8 — no
+              POL required ever again.
+            </>
+          ) : (
+            <>
+              Approve the USD8 Paymaster once. This first transaction will also deploy your smart
+              account. Every future transaction will be paid automatically in USD8 — you'll never
+              need POL again.
+            </>
+          )}
         </CardDescription>
       </div>
 
@@ -295,54 +320,88 @@ function DisconnectButton() {
   )
 }
 
-export function OnboardingPage({ onComplete }: { onComplete: () => void }) {
+export function OnboardingPage({
+  onComplete,
+  onSwitchToExisting,
+  onGoBack,
+}: {
+  onComplete: () => void
+  onSwitchToExisting?: () => void
+  onGoBack?: () => void
+}) {
   const { isConnected } = useAccount()
-  const { smartAddress, isLoading, polBalance, isApproved } = useAccountBalances()
+  const { smartAddress, isLoading, polBalance, isApproved, isDeployed } = useAccountBalances()
 
-  const step = deriveStep(isConnected, isLoading, smartAddress, polBalance, isApproved)
+  const step = deriveStep(isConnected, isLoading, smartAddress, polBalance, isApproved, isDeployed)
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <header className="border-b bg-background/95 backdrop-blur sticky top-0 z-10">
-        <div className="max-w-4xl mx-auto px-4 py-3 flex items-center gap-3">
-          <h1 className="text-xl font-bold tracking-tight">USD8 Gasless Transfer</h1>
-          <Badge variant="secondary" className="text-xs">ERC-4337</Badge>
+        <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <h1 className="text-xl font-bold tracking-tight">USD8 Gasless Transfer</h1>
+            <Badge variant="secondary" className="text-xs">ERC-4337</Badge>
+          </div>
+          {isConnected && (
+            <DisconnectButton />
+          )}
         </div>
       </header>
 
-      <main className="flex-1 flex items-center justify-center px-4 py-12">
-        <div className="w-full max-w-md space-y-2">
-          <ProgressDots current={step} />
+      <main className="flex-1 flex flex-col px-4 py-12">
+        <div className="flex-1 flex items-center justify-center">
+          <div className="w-full max-w-md space-y-2">
+            {onGoBack && (
+              <div className="mb-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={onGoBack}
+                  className="text-xs text-muted-foreground hover:text-foreground -ml-2"
+                >
+                  ← Go back
+                </Button>
+              </div>
+            )}
 
-          <Card>
-            <CardHeader className="pb-0" />
-            <CardContent className="pt-2 pb-8 px-8">
-              {step === "connect" && <StepConnect />}
-              {step === "loading" && <StepLoading />}
-              {step === "fund" && (
-                <StepFund smartAddress={smartAddress!} polBalance={polBalance} />
-              )}
-              {step === "approve" && (
-                <StepApprove smartAddress={smartAddress!} polBalance={polBalance} />
-              )}
-              {step === "done" && (
-                <>
-                  <StepDone smartAddress={smartAddress!} />
-                  <div className="mt-6">
-                    <Button className="w-full" onClick={onComplete}>
-                      Open App
-                    </Button>
-                  </div>
-                </>
-              )}
-            </CardContent>
-          </Card>
+            <ProgressDots current={step} />
 
-          {isConnected && (
-            <div className="flex justify-center">
-              <DisconnectButton />
-            </div>
-          )}
+            <Card>
+              <CardHeader className="pb-0" />
+              <CardContent className="pt-2 pb-8 px-8">
+                {step === "connect" && <StepConnect />}
+                {step === "loading" && <StepLoading />}
+                {step === "fund" && (
+                  <StepFund smartAddress={smartAddress!} polBalance={polBalance} />
+                )}
+                {step === "approve" && (
+                  <StepApprove smartAddress={smartAddress!} polBalance={polBalance} isDeployed={isDeployed} />
+                )}
+                {step === "done" && (
+                  <>
+                    <StepDone smartAddress={smartAddress!} />
+                    <div className="mt-6">
+                      <Button className="w-full" onClick={onComplete}>
+                        Open App
+                      </Button>
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+
+            {onSwitchToExisting && (
+              <div className="text-center text-xs text-muted-foreground">
+                Already have a smart account?{" "}
+                <button
+                  onClick={onSwitchToExisting}
+                  className="underline hover:text-foreground transition-colors"
+                >
+                  Connect existing instead
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </main>
     </div>

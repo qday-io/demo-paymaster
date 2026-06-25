@@ -1,5 +1,6 @@
 import { formatUnits } from "viem"
-import { useBalance, useReadContract } from "wagmi"
+import { useQuery } from "@tanstack/react-query"
+import { useBalance, usePublicClient, useReadContract } from "wagmi"
 import {
   PRICE_ORACLE_ABI,
   PRICE_ORACLE_ADDRESS,
@@ -60,7 +61,23 @@ export function useAccountBalances(recipientAddress?: string) {
     query: { refetchInterval: 30_000 },
   })
 
+  const publicClient = usePublicClient()
+
+  const { data: isDeployed = false, isLoading: isDeployedLoading } = useQuery({
+    queryKey: ["isSmartAccountDeployed", smartAddress],
+    queryFn: async () => {
+      if (!smartAddress || !publicClient) return false
+      const code = await publicClient.getBytecode({ address: smartAddress })
+      return Boolean(code && code !== "0x")
+    },
+    enabled: Boolean(smartAddress && publicClient),
+    refetchInterval: 4000,
+    staleTime: 1000,
+  })
+
   const isApproved = allowance !== undefined && (allowance as bigint) > 0n
+
+  const isLoading = addressLoading || isDeployedLoading
 
   const oraclePrice = oraclePriceRaw
     ? Number((oraclePriceRaw as [bigint, number])[0]) / 1e8
@@ -68,13 +85,14 @@ export function useAccountBalances(recipientAddress?: string) {
 
   return {
     smartAddress,
-    isLoading: addressLoading,
+    isLoading,
     polBalance: polBalance ? formatUnits(polBalance.value, 18) : null,
     usd8BalanceA: usd8BalanceA ? formatUnits(usd8BalanceA as bigint, USD8_DECIMALS) : null,
     usd8BalanceB: usd8BalanceB ? formatUnits(usd8BalanceB as bigint, USD8_DECIMALS) : null,
     recipientAddress: recipient,
     allowance: allowance as bigint | undefined,
     isApproved,
+    isDeployed,
     oraclePrice,
     paymasterDeposit: paymasterDeposit ? formatUnits(paymasterDeposit as bigint, 18) : null,
     refetchAllowance,
